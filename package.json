@@ -4,7 +4,7 @@
   "description": "",
   "main": "main.js",
   "scripts": {
-    "publish": "npm publish --access public"
+    "pub": "npm publish --access public"
   },
   "author": "anak10thn<anak10thn@gmail.com>",
   "license": "MIT",
