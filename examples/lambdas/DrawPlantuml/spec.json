@@ -1,0 +1,16 @@
+{
+    "name": "DrawPlantuml",
+    "parameters": {
+        "type": "object",
+        "required": [
+            "code"
+        ],
+        "properties": {
+            "code": {
+                "type": "string",
+                "description": "Source code of the diagram in PlantUML"
+            }
+        }
+    },
+    "description": "Create or render a diagram description in PlantUML"
+}
