@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require("openai");
+const { finished } = require('stream/promises');
 
 const moduleDir = path.join(__dirname, 'lambdas');
 
@@ -60,7 +61,20 @@ const callLambda = (dir) => {
 
 async function* returnStream(response) {
     for await (const chunk of response) {
-        yield chunk.choices[0]
+        const message = chunk.choices[0]?.delta;
+        const isFinish = chunk.choices[0]?.finish_reason ? true : false;
+        if(isFinish){
+            yield {
+                ...message,
+                finished: true
+            }
+        }
+        else{
+            yield {
+                ...message,
+                finished: false
+            }
+        }
     }
 }
 
@@ -148,7 +162,10 @@ module.exports = class LambdaLM {
             return returnStream(res)
         }
 
-        const lambda = res.choices[0].message
+        const lambda = {
+            ...res.choices[0].message,
+            finished: true
+        }
         this.inferenceResult = lambda;
         return lambda
     }
