@@ -35,6 +35,17 @@ const readSpec = (dir) => {
     }
 }
 
+const readConfig = (dir) => {
+    const name = path.basename(dir);
+    const config = path.join(dir, 'config.json');
+    if (!fs.existsSync(config)) {
+        return false
+    }
+    const userConfig = {};
+    userConfig[name] = require(config);
+    return userConfig
+}
+
 const callLambda = (dir) => {
     const lambdaName = path.basename(dir);
     const funcFile = path.join(dir, 'index.js');
@@ -45,6 +56,27 @@ const callLambda = (dir) => {
     const func = {};
     func[lambdaName] = require(funcFile);
     return func
+}
+
+async function* returnStream(response) {
+    for await (const chunk of response) {
+        yield chunk.choices[0]
+    }
+}
+
+async function* returnSpawn(tools, lambda) {
+    for await (const tool of tools.tool_calls) {
+        const f = tool.function;
+        const args = JSON.parse(f.arguments);
+        const isAsync = lambda[f.name].constructor.name === "AsyncFunction";
+        const exec = isAsync ? await lambda[f.name](args) : lambda[f.name](args);
+        yield {
+            type: tool.type,
+            name: f.name,
+            args,
+            response: exec
+        }
+    }
 }
 
 module.exports = class LambdaLM {
@@ -60,23 +92,30 @@ module.exports = class LambdaLM {
                 return readSpec(dir)
             })
             .filter(f => f);
+
+        const toolsObj = Object.assign({}, ...this.tools.map(t => {
+            const toolObj = {};
+            toolObj[t.function.name] = t;
+            return toolObj
+        }));
+
+        const userConfig = Object.assign(
+            {}, ...listDir(dirPath)
+                .map(dir => readConfig(dir))
+                .filter(f => f)
+        );
+
+        this.lambdaList = Object.keys(this.lambda).map(name => {
+            return {
+                name,
+                spec: toolsObj[name],
+                config: userConfig[name] || null
+            }
+        })
     }
 
     async spawn(tools = this.inferenceResult) {
-        const result = []
-        for await (const tool of tools.tool_calls) {
-            const f = tool.function;
-            const args = JSON.parse(f.arguments);
-            const isAsync = this.lambda[f.name].constructor.name === "AsyncFunction";
-            const exec = isAsync ? await this.lambda[f.name](args) : this.lambda[f.name](args);
-            result.push({
-                type: tool.type,
-                name: f.name,
-                args,
-                response: exec
-            })
-        }
-        return result
+        return returnSpawn(tools, this.lambda)
     }
     async inference(
         content,
@@ -92,6 +131,13 @@ module.exports = class LambdaLM {
         options['messages'] = [{ "role": "system", "content": "Don't make assumptions about what values to plug into functions. Ask for clarification if a user request is ambiguous." }];
         options.messages = options.messages.concat(content);
         const res = await llm.chat.completions.create(options);
+
+        this.options = options;
+        // Check if stream
+        if (options.stream) {
+            return returnStream(res)
+        }
+
         const lambda = res.choices[0].message
         this.inferenceResult = lambda;
         return lambda
