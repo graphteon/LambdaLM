@@ -64,12 +64,12 @@ async function* returnStream(response) {
     }
 }
 
-async function* returnSpawn(tools, lambda) {
+async function* returnSpawn(tools, lambda, userConfig) {
     for await (const tool of tools.tool_calls) {
         const f = tool.function;
         const args = JSON.parse(f.arguments);
         const isAsync = lambda[f.name].constructor.name === "AsyncFunction";
-        const exec = isAsync ? await lambda[f.name](args) : lambda[f.name](args);
+        const exec = isAsync ? await lambda[f.name](args, userConfig[f.name]?.config) : lambda[f.name](args, userConfig[f.name]?.config);
         yield {
             type: tool.type,
             name: f.name,
@@ -92,6 +92,15 @@ module.exports = class LambdaLM {
                 return readSpec(dir)
             })
             .filter(f => f);
+        
+        // New LambdaLM().userConfig = {
+        //      "LambdaName" : {
+        //             "config" : {
+        //                  "apiKey" : "sssss-----fake-taxy"
+        //             }
+        //      }
+        // }
+        this.userConfig = {};
 
         const toolsObj = Object.assign({}, ...this.tools.map(t => {
             const toolObj = {};
@@ -115,8 +124,9 @@ module.exports = class LambdaLM {
     }
 
     async spawn(tools = this.inferenceResult) {
-        return returnSpawn(tools, this.lambda)
+        return returnSpawn(tools, this.lambda, this.userConfig)
     }
+
     async inference(
         content,
         params = {},
