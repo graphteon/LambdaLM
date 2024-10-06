@@ -2,21 +2,30 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require("openai");
 
+const moduleDir = path.join(__dirname, 'lambdas');
+
 const listDir = (directoryPath) => {
     try {
-        const files = fs.readdirSync(directoryPath);
-        return files.filter(file => {
-            const filePath = path.join(directoryPath, file);
-            const stats = fs.statSync(filePath);
-            return stats.isDirectory()
-        })
+        let files = fs.readdirSync(directoryPath)
+            .map(p => `${directoryPath}/${p}`)
+            .filter(file => {
+                const stats = fs.statSync(file);
+                return stats.isDirectory()
+            });
+        files = files.concat(fs.readdirSync(moduleDir)
+            .map(p => `${moduleDir}/${p}`)
+            .filter(file => {
+                const stats = fs.statSync(file);
+                return stats.isDirectory()
+            }));
+        return files
     } catch (err) {
         console.error('Unable to scan directory: ' + err);
     }
 }
 
-const readSpec = (dir, directoryPath) => {
-    const manifestFile = path.join(directoryPath, dir, 'spec.json');
+const readSpec = (dir) => {
+    const manifestFile = path.join(dir, 'spec.json');
     if (!fs.existsSync(manifestFile)) {
         return false
     }
@@ -26,14 +35,15 @@ const readSpec = (dir, directoryPath) => {
     }
 }
 
-const callLambda = (dir, directoryPath) => {
-    const funcFile = path.join(directoryPath, dir, 'index.js');
+const callLambda = (dir) => {
+    const lambdaName = path.basename(dir);
+    const funcFile = path.join(dir, 'index.js');
     const isFuncFileExist = fs.existsSync(funcFile);
 
     if (!isFuncFileExist) return null
 
     const func = {};
-    func[dir] = require(funcFile);
+    func[lambdaName] = require(funcFile);
     return func
 }
 
@@ -42,12 +52,12 @@ module.exports = class LambdaLM {
         const dirPath = path.join(...directoryPath);
         this.lambda = Object.assign(
             {}, ...listDir(dirPath)
-                .map(dir => callLambda(dir, dirPath))
+                .map(dir => callLambda(dir))
                 .filter(f => f)
         );
         this.tools = listDir(dirPath)
             .map(dir => {
-                return readSpec(dir, dirPath)
+                return readSpec(dir)
             })
             .filter(f => f);
     }
