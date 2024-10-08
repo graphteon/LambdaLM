@@ -60,16 +60,45 @@ const callLambda = (dir) => {
 }
 
 async function* returnStream(response) {
+    let temp = [];
+    let tempLambda = [];
     for await (const chunk of response) {
         const message = chunk.choices[0]?.delta;
         const isFinish = chunk.choices[0]?.finish_reason ? true : false;
-        if(isFinish){
+        const isTools = message.tool_calls?.length > 0;
+        if (isTools) {
+            if (message.tool_calls[0].id) {
+                if (temp.length > 0) {
+                    const args = temp.join('');
+                    tempLambda[tempLambda.length - 1].function.arguments = args;
+                }
+                temp = []
+                tempLambda.push(message.tool_calls[0]);
+                temp.push(message.tool_calls[0].function.arguments);
+            }
+            else {
+                temp.push(message.tool_calls[0].function.arguments);
+            }
+
+            if (!isFinish) {
+                continue;
+            }
+        }
+
+        if (isFinish) {
+            if (tempLambda.length > 0) {
+                const args = temp.join('');
+                tempLambda[tempLambda.length - 1].function.arguments = args;
+                message.role = "assistant";
+                message.content = null;
+                message.tool_calls= tempLambda;
+            }
             yield {
                 ...message,
                 finished: true
             }
         }
-        else{
+        else {
             yield {
                 ...message,
                 finished: false
@@ -106,7 +135,7 @@ module.exports = class LambdaLM {
                 return readSpec(dir)
             })
             .filter(f => f);
-        
+
         // New LambdaLM().userConfig = {
         //      "LambdaName" : {
         //             "config" : {
