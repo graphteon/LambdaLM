@@ -91,7 +91,7 @@ async function* returnStream(response) {
                 tempLambda[tempLambda.length - 1].function.arguments = args;
                 message.role = "assistant";
                 message.content = null;
-                message.tool_calls= tempLambda;
+                message.tool_calls = tempLambda;
             }
             yield {
                 ...message,
@@ -143,7 +143,6 @@ module.exports = class LambdaLM {
         //             }
         //      }
         // }
-        this.userConfig = {};
 
         const toolsObj = Object.assign({}, ...this.tools.map(t => {
             const toolObj = {};
@@ -151,7 +150,7 @@ module.exports = class LambdaLM {
             return toolObj
         }));
 
-        const userConfig = Object.assign(
+        this.userConfig = Object.assign(
             {}, ...listDir(dirPath)
                 .map(dir => readConfig(dir))
                 .filter(f => f)
@@ -161,9 +160,41 @@ module.exports = class LambdaLM {
             return {
                 name,
                 spec: toolsObj[name],
-                config: userConfig[name] || null
+                config: this.userConfig[name] || null
             }
         })
+    }
+
+    // [{
+    // spec: {
+    //     "name": "Calculator",
+    //     "description": "Calculate a math expression. For example, \"2 + 2\" or \"2 * 2\". The expression must be a valid JavaScript math expression.",
+    //     "parameters": {
+    //         "type": "object",
+    //         "properties": {
+    //             "expression": {
+    //                 "type": "string",
+    //                 "description": "A valid JavaScript math expression for the calculation."
+    //             }
+    //         },
+    //         "required": ["expression"]
+    //     },
+    // handler : function get_calculation_result(params) {
+    //     return eval(params.expression);
+    //   }
+    // }]
+    register(lambdas) {
+        if (Array.isArray(lambdas) && lambdas.length > 0) {
+            for (const lambda of lambdas) {
+                this.tools.push({
+                    type: 'function',
+                    function: lambda.spec
+                });
+
+                this.lambda[lambda.spec.name] = lambda.handler;
+                this.userConfig[lambda.spec.name] = lambda.config || {};
+            }
+        }
     }
 
     async spawn(tools = this.inferenceResult) {
